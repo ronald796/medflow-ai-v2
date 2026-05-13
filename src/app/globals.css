@@ -21,7 +21,7 @@
   --color-status-info: #3b82f6;
 
   /* Typography */
-  --font-sans: "Inter", system-ui, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 :root {

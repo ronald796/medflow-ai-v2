@@ -21,6 +21,38 @@ export interface EcoFile {
   category: "prostata" | "renal" | "vejiga" | "otro";
 }
 
+// ── Contabilidad Multimoneda ──────────────────────────────────────────────────
+
+export type Moneda = 'USD' | 'VES' | 'EUR';
+
+export type MetodoPago =
+  | 'Zelle'
+  | 'Efectivo'
+  | 'Pago Movil'
+  | 'Transferencia'
+  | 'Punto';
+
+export interface Transaccion {
+  id: string;
+  monto: number;            // Monto en la moneda original
+  moneda: Moneda;
+  metodo: MetodoPago;
+  tasaReferencia: number;   // Tasa BCV en el momento exacto del registro
+  montoCalculadoBs: number; // monto * tasaReferencia (si USD/EUR) | monto (si VES)
+  concepto: string;         // "Consulta Urología - Carlos Medina"
+  fecha: string;            // ISO timestamp
+  referencia?: string;      // Número de referencia Zelle / transferencia
+}
+
+// Métodos disponibles por moneda
+export const METODOS_POR_MONEDA: Record<Moneda, MetodoPago[]> = {
+  USD: ['Zelle', 'Efectivo', 'Transferencia'],
+  VES: ['Efectivo', 'Pago Movil', 'Transferencia', 'Punto'],
+  EUR: ['Efectivo', 'Transferencia'],
+};
+
+// ── Pacientes ──────────────────────────────────────────────────────────────────
+
 export interface Patient {
   id: string;
   name: string;
