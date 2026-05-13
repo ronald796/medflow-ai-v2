@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import os
 import time
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, date
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from bs4 import BeautifulSoup
@@ -75,7 +77,7 @@ class PatientData(BaseModel):
     psa_total: float
     psa_free: Optional[float] = None
     prostate_volume: Optional[float] = None
-    psa_history: Optional[list[dict]] = None
+    psa_history: Optional[List[Dict[str, Any]]] = None
     observations: str = ""
 
 class TransaccionIn(BaseModel):
