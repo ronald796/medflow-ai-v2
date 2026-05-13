@@ -30,8 +30,15 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files — excluir todos EXCEPTO el ejemplo de referencia
 .env*
+!.env.example
+
+# Python / Backend
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
 
 # vercel
 .vercel

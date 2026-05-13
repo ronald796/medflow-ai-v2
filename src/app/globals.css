@@ -1,26 +1,55 @@
 @import "tailwindcss";
 
+@theme {
+  /* MedFlow-AI Brand Colors */
+  --color-medflow-emerald: #10b981;
+  --color-medflow-emerald-hover: #059669;
+  --color-medflow-emerald-light: #d1fae5;
+  --color-medflow-slate: #0f172a;
+  --color-medflow-slate-hover: #1e293b;
+  --color-medflow-light: #f8fafc;
+  --color-medflow-muted: #94a3b8;
+
+  /* Urology Module Colors */
+  --color-urology-blue: #2563eb;
+  --color-urology-blue-light: #dbeafe;
+
+  /* Status Colors */
+  --color-status-success: #10b981;
+  --color-status-warning: #f59e0b;
+  --color-status-danger: #ef4444;
+  --color-status-info: #3b82f6;
+
+  /* Typography */
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --sidebar-width: 260px;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling - clean & minimal */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
