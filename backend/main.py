@@ -357,3 +357,9 @@ Máximo 150 palabras. Sin saludos. En español."""
         model="llama-3.3-70b-versatile",
         tokens_used=completion.usage.total_tokens if completion.usage else 0,
     )
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
