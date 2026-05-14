@@ -64,10 +64,12 @@ export default function PacientesPage() {
             {MOCK_PATIENTS.length} pacientes registrados
           </p>
         </div>
-        <button className="inline-flex items-center gap-2 bg-medflow-emerald text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-medflow-emerald-hover transition-colors shadow-sm">
-          <UserPlus className="w-4 h-4" />
-          Nuevo Paciente
-        </button>
+        <Link href="/pacientes/nuevo">
+          <button className="inline-flex items-center gap-2 bg-medflow-emerald text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-medflow-emerald-hover transition-colors shadow-sm">
+            <UserPlus className="w-4 h-4" />
+            Nuevo Paciente
+          </button>
+        </Link>
       </div>
 
       {/* Alert banner for pending biopsies */}
