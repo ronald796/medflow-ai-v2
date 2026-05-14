@@ -27,14 +27,60 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── SQLite — conexión segura con context manager ───────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  BASE DE DATOS — HÍBRIDO SQLite (local) / PostgreSQL (Railway)
+# ═══════════════════════════════════════════════════════════════════════════════
 
-DB_PATH = os.getenv("DB_PATH", "medflow.db")
+DATABASE_URL = os.getenv("DATABASE_URL")   # Railway inyecta esto automáticamente
+DB_PATH      = os.getenv("DB_PATH", "medflow.db")
+IS_POSTGRES  = bool(DATABASE_URL)
+
+
+class _UnifiedConn:
+    """
+    Wrapper que normaliza sqlite3 y psycopg2 en una sola interfaz.
+    - conn.execute(query, params) funciona igual en ambos dialectos
+    - Los placeholders '?' se convierten a '%s' para PostgreSQL
+    - Las filas se devuelven como dict en los dos casos
+    """
+
+    def __init__(self, raw_conn, is_pg: bool):
+        self._conn  = raw_conn
+        self._is_pg = is_pg
+        self._cur   = raw_conn.cursor() if is_pg else None
+
+    def _q(self, query: str) -> str:
+        return query.replace("?", "%s") if self._is_pg else query
+
+    def execute(self, query: str, params: tuple = ()):
+        if self._is_pg:
+            self._cur.execute(self._q(query), params)
+            return self._cur
+        return self._conn.execute(query, params)
+
+    def commit(self):   self._conn.commit()
+    def rollback(self): self._conn.rollback()
+
+    def close(self):
+        if self._is_pg and self._cur:
+            self._cur.close()
+        self._conn.close()
+
 
 @contextmanager
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # filas como dicts
+    if IS_POSTGRES:
+        import psycopg2
+        import psycopg2.extras
+        url = DATABASE_URL
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+        raw = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
+    else:
+        raw = sqlite3.connect(DB_PATH)
+        raw.row_factory = sqlite3.Row
+
+    conn = _UnifiedConn(raw, IS_POSTGRES)
     try:
         yield conn
         conn.commit()
@@ -44,7 +90,8 @@ def get_db():
     finally:
         conn.close()
 
-def init_db():
+
+def init_db() -> None:
     with get_db() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS transacciones (
@@ -83,6 +130,7 @@ def init_db():
                 fecha_registro       TEXT NOT NULL
             )
         """)
+
 
 init_db()
 
@@ -202,9 +250,10 @@ async def get_bcv_rate():
 async def save_transaction(tx: TransaccionIn):
     with get_db() as conn:
         conn.execute(
-            """INSERT OR REPLACE INTO transacciones
+            """INSERT INTO transacciones
                (id, monto, moneda, metodo, tasa_ref, monto_bs, concepto, referencia, fecha)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (id) DO NOTHING""",
             (
                 tx.id, tx.monto, tx.moneda, tx.metodo,
                 tx.tasaReferencia, tx.montoCalculadoBs,
