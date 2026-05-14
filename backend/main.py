@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, date
@@ -56,6 +57,30 @@ def init_db():
                 concepto      TEXT NOT NULL,
                 referencia    TEXT,
                 fecha         TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pacientes (
+                id                   TEXT PRIMARY KEY,
+                nombre               TEXT NOT NULL,
+                cedula               TEXT,
+                edad                 INTEGER NOT NULL,
+                fecha_nacimiento     TEXT,
+                telefono             TEXT,
+                email                TEXT,
+                psa_total            REAL,
+                psa_libre            REAL,
+                indice_psa           REAL,
+                volumen_prostatico   REAL,
+                ipss                 INTEGER,
+                antecedentes_ca      TEXT DEFAULT 'no',
+                motivo_consulta      TEXT,
+                diagnostico          TEXT,
+                hipertension         INTEGER DEFAULT 0,
+                diabetes             INTEGER DEFAULT 0,
+                cirugia_previa       INTEGER DEFAULT 0,
+                notas                TEXT,
+                fecha_registro       TEXT NOT NULL
             )
         """)
 
@@ -358,6 +383,98 @@ Máximo 150 palabras. Sin saludos. En español."""
         tokens_used=completion.usage.total_tokens if completion.usage else 0,
     )
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PACIENTES — CRUD UROLÓGICO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class PacienteIn(BaseModel):
+    nombre: str
+    cedula: Optional[str] = None
+    edad: int
+    fecha_nacimiento: Optional[str] = None
+    telefono: Optional[str] = None
+    email: Optional[str] = None
+    psa_total: Optional[float] = None
+    psa_libre: Optional[float] = None
+    volumen_prostatico: Optional[float] = None
+    ipss: Optional[int] = None
+    antecedentes_ca: str = "no"
+    motivo_consulta: str
+    diagnostico: Optional[str] = None
+    hipertension: bool = False
+    diabetes: bool = False
+    cirugia_previa: bool = False
+    notas: Optional[str] = None
+
+
+@app.post("/api/v1/pacientes", status_code=201)
+async def save_patient(p: PacienteIn):
+    pid = str(uuid.uuid4())
+    fecha = datetime.now().isoformat()
+
+    # Calcular índice PSA automáticamente
+    indice = None
+    if p.psa_total and p.psa_libre and p.psa_total > 0:
+        indice = round(p.psa_libre / p.psa_total * 100, 2)
+
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO pacientes
+               (id, nombre, cedula, edad, fecha_nacimiento, telefono, email,
+                psa_total, psa_libre, indice_psa, volumen_prostatico, ipss,
+                antecedentes_ca, motivo_consulta, diagnostico,
+                hipertension, diabetes, cirugia_previa, notas, fecha_registro)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                pid, p.nombre, p.cedula, p.edad, p.fecha_nacimiento,
+                p.telefono, p.email, p.psa_total, p.psa_libre, indice,
+                p.volumen_prostatico, p.ipss, p.antecedentes_ca,
+                p.motivo_consulta, p.diagnostico,
+                int(p.hipertension), int(p.diabetes), int(p.cirugia_previa),
+                p.notas, fecha,
+            ),
+        )
+
+    return {
+        "status": "success",
+        "id": pid,
+        "indice_psa": indice,
+        "alerta": (
+            "PSA elevado — considerar biopsia" if p.psa_total and p.psa_total > 4 else None
+        ),
+    }
+
+
+@app.get("/api/v1/pacientes")
+async def list_patients(q: Optional[str] = Query(None, description="Buscar por nombre o cédula")):
+    with get_db() as conn:
+        if q:
+            rows = conn.execute(
+                """SELECT * FROM pacientes
+                   WHERE nombre LIKE ? OR cedula LIKE ?
+                   ORDER BY fecha_registro DESC LIMIT 100""",
+                (f"%{q}%", f"%{q}%"),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM pacientes ORDER BY fecha_registro DESC LIMIT 100"
+            ).fetchall()
+    return {"pacientes": [dict(r) for r in rows], "count": len(rows)}
+
+
+@app.get("/api/v1/pacientes/{pid}")
+async def get_patient(pid: str):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM pacientes WHERE id = ?", (pid,)
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    return dict(row)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     import uvicorn
