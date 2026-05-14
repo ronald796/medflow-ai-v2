@@ -385,6 +385,73 @@ Máximo 150 palabras. Sin saludos. En español."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  DASHBOARD — STATS EN TIEMPO REAL
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/v1/dashboard/stats")
+async def get_dashboard_stats():
+    hoy = date.today().isoformat()
+
+    with get_db() as conn:
+        # Pacientes registrados hoy
+        pacientes_hoy = conn.execute(
+            "SELECT COUNT(*) FROM pacientes WHERE fecha_registro LIKE ?",
+            (f"{hoy}%",),
+        ).fetchone()[0]
+
+        # Total pacientes en sistema
+        total_pacientes = conn.execute(
+            "SELECT COUNT(*) FROM pacientes"
+        ).fetchone()[0]
+
+        # Alertas PSA: PSA > 4 o índice < 15%
+        alertas_rows = conn.execute(
+            """SELECT nombre, edad, psa_total, indice_psa
+               FROM pacientes
+               WHERE (psa_total > 4 OR (indice_psa IS NOT NULL AND indice_psa < 15))
+               ORDER BY psa_total DESC LIMIT 5"""
+        ).fetchall()
+
+        alertas = [
+            {
+                "nombre": r["nombre"],
+                "edad": r["edad"],
+                "psa": r["psa_total"],
+                "indice": r["indice_psa"],
+                "prioridad": (
+                    "alta" if (r["indice_psa"] and r["indice_psa"] < 15) or (r["psa_total"] and r["psa_total"] > 10)
+                    else "media" if r["psa_total"] and r["psa_total"] > 4
+                    else "baja"
+                ),
+            }
+            for r in alertas_rows
+        ]
+
+        # Caja del día
+        caja_rows = conn.execute(
+            "SELECT moneda, SUM(monto) as total, SUM(monto_bs) as total_bs FROM transacciones WHERE fecha LIKE ? GROUP BY moneda",
+            (f"{hoy}%",),
+        ).fetchall()
+
+        caja = {r["moneda"]: {"monto": r["total"], "bs": r["total_bs"]} for r in caja_rows}
+        total_bs_hoy = sum(r["total_bs"] for r in caja_rows)
+        total_usd_hoy = caja.get("USD", {}).get("monto", 0)
+
+    return {
+        "pacientes_hoy":   pacientes_hoy,
+        "total_pacientes": total_pacientes,
+        "total_alertas":   len(alertas),
+        "alertas":         alertas,
+        "caja": {
+            "total_usd": round(total_usd_hoy, 2),
+            "total_bs":  round(total_bs_hoy, 2),
+            "detalle":   caja,
+        },
+        "fecha": hoy,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  PACIENTES — CRUD UROLÓGICO
 # ═══════════════════════════════════════════════════════════════════════════════
 
