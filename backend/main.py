@@ -91,6 +91,15 @@ def get_db():
         conn.close()
 
 
+def _scalar(row) -> int:
+    """Extrae el primer valor de un fetchone() — compatible con sqlite3.Row y psycopg2 RealDictRow."""
+    if row is None:
+        return 0
+    if isinstance(row, dict):
+        return list(row.values())[0]
+    return row[0]
+
+
 def init_db() -> None:
     with get_db() as conn:
         conn.execute("""
@@ -443,15 +452,15 @@ async def get_dashboard_stats():
 
     with get_db() as conn:
         # Pacientes registrados hoy
-        pacientes_hoy = conn.execute(
+        pacientes_hoy = _scalar(conn.execute(
             "SELECT COUNT(*) FROM pacientes WHERE fecha_registro LIKE ?",
             (f"{hoy}%",),
-        ).fetchone()[0]
+        ).fetchone())
 
         # Total pacientes en sistema
-        total_pacientes = conn.execute(
+        total_pacientes = _scalar(conn.execute(
             "SELECT COUNT(*) FROM pacientes"
-        ).fetchone()[0]
+        ).fetchone())
 
         # Alertas PSA: PSA > 4 o índice < 15%
         alertas_rows = conn.execute(
