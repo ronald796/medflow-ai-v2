@@ -140,8 +140,41 @@ def init_db() -> None:
             )
         """)
 
+        # ── PSA Longitudinal — historial de mediciones ─────────────────────────
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS psa_measurements (
+                id                TEXT PRIMARY KEY,
+                patient_id        TEXT NOT NULL,
+                measurement_date  TEXT NOT NULL,
+                psa_total         REAL NOT NULL,
+                psa_free          REAL,
+                psa_ratio         REAL,
+                prostate_volume   REAL,
+                psa_density       REAL,
+                lab_name          TEXT,
+                clinical_context  TEXT NOT NULL DEFAULT 'FOLLOW_UP',
+                notes             TEXT,
+                created_by        TEXT NOT NULL DEFAULT 'system',
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT NOT NULL,
+                deleted_at        TEXT
+            )
+        """)
+
+        # Índices para búsquedas rápidas por paciente y fecha
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_psa_patient ON psa_measurements(patient_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_psa_patient_date ON psa_measurements(patient_id, measurement_date)"
+        )
+
 
 init_db()
+
+# ── Incluir router PSA longitudinal ───────────────────────────────────────────
+from psa_router import router as psa_router
+app.include_router(psa_router)
 
 # ── In-memory BCV cache ────────────────────────────────────────────────────────
 

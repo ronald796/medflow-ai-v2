@@ -136,3 +136,87 @@ export async function getFinanceAnalysis(fecha?: string): Promise<FinanceAnalysi
   }
   return res.json();
 }
+
+// ── PSA Longitudinal ──────────────────────────────────────────────────────────
+
+export type ClinicalContext =
+  | "SCREENING" | "POST_BIOPSY" | "POST_RTU" | "POST_PROSTATECTOMY"
+  | "POST_RADIOTHERAPY" | "POST_HORMONOTHERAPY" | "ACTIVE_SURVEILLANCE" | "FOLLOW_UP";
+
+export interface PSAMeasurementCreate {
+  measurement_date: string;        // YYYY-MM-DD
+  psa_total: number;               // ng/mL — requerido, > 0
+  psa_free?: number;               // ng/mL — opcional
+  prostate_volume?: number;        // cc — opcional
+  lab_name?: string;
+  clinical_context?: ClinicalContext;
+  notes?: string;
+  created_by?: string;
+}
+
+export interface PSAMeasurementOut extends PSAMeasurementCreate {
+  id: string;
+  patient_id: string;
+  psa_ratio: number | null;        // calculado: psa_free/psa_total * 100
+  psa_density: number | null;      // calculado: psa_total/prostate_volume
+  clinical_context: ClinicalContext;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PSAMetrics {
+  count: number;
+  latest_psa: number | null;
+  latest_date: string | null;
+  psa_velocity: number | null;        // ng/mL/año
+  psa_doubling_time: number | null;   // meses
+  psa_nadir: number | null;
+  trend: "INCREASING" | "STABLE" | "DECREASING" | "INSUFFICIENT_DATA";
+  biochemical_recurrence: boolean | null;
+}
+
+export interface PSAHistoryResponse {
+  patient_id: string;
+  measurements: PSAMeasurementOut[];
+  metrics: PSAMetrics;
+}
+
+export async function createPsaMeasurement(
+  patientId: string,
+  payload: PSAMeasurementCreate
+): Promise<PSAMeasurementOut> {
+  const res = await fetch(`${BASE_URL}/api/v1/pacientes/${patientId}/psa`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Error registrando medición PSA");
+  }
+  return res.json();
+}
+
+export async function getPsaHistory(patientId: string): Promise<PSAHistoryResponse> {
+  const res = await fetch(
+    `${BASE_URL}/api/v1/pacientes/${patientId}/psa`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Error obteniendo historial PSA");
+  }
+  return res.json();
+}
+
+export async function deletePsaMeasurement(
+  patientId: string,
+  measurementId: string
+): Promise<void> {
+  const res = await fetch(
+    `${BASE_URL}/api/v1/pacientes/${patientId}/psa/${measurementId}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) throw new Error("Error eliminando medición PSA");
+}
