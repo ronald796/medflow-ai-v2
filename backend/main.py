@@ -448,11 +448,9 @@ Máximo 150 palabras. Sin saludos. En español."""
 
 @app.get("/api/v1/dashboard/stats")
 async def get_dashboard_stats():
-    import traceback
     hoy = date.today().isoformat()
 
-    try:
-        with get_db() as conn:
+    with get_db() as conn:
             pacientes_hoy = _scalar(conn.execute(
                 "SELECT COUNT(*) FROM pacientes WHERE fecha_registro LIKE ?",
                 (f"{hoy}%",),
@@ -495,22 +493,18 @@ async def get_dashboard_stats():
             total_bs_hoy = sum(float(r["total_bs"] or 0) for r in caja_rows)
             total_usd_hoy = caja.get("USD", {}).get("monto", 0.0)
 
-        return {
-            "pacientes_hoy":   int(pacientes_hoy),
-            "total_pacientes": int(total_pacientes),
-            "total_alertas":   len(alertas),
-            "alertas":         alertas,
-            "caja": {
-                "total_usd": round(float(total_usd_hoy), 2),
-                "total_bs":  round(float(total_bs_hoy), 2),
-                "detalle":   caja,
-            },
-            "fecha": hoy,
-        }
-
-    except Exception as exc:
-        # Diagnóstico temporal — se eliminará tras confirmar el fix
-        return {"error": str(exc), "trace": traceback.format_exc(), "fecha": hoy}
+    return {
+        "pacientes_hoy":   int(pacientes_hoy),
+        "total_pacientes": int(total_pacientes),
+        "total_alertas":   len(alertas),
+        "alertas":         alertas,
+        "caja": {
+            "total_usd": round(float(total_usd_hoy), 2),
+            "total_bs":  round(float(total_bs_hoy), 2),
+            "detalle":   caja,
+        },
+        "fecha": hoy,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
