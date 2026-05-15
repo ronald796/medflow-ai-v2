@@ -100,6 +100,17 @@ def _scalar(row) -> int:
     return row[0]
 
 
+def _add_col(conn, table: str, col: str, definition: str) -> None:
+    """ALTER TABLE ADD COLUMN compatible con PostgreSQL (IF NOT EXISTS) y SQLite (try/except)."""
+    if IS_POSTGRES:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {definition}")
+    else:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {definition}")
+        except Exception:
+            pass  # Column already exists in SQLite
+
+
 def init_db() -> None:
     with get_db() as conn:
         conn.execute("""
@@ -161,20 +172,128 @@ def init_db() -> None:
             )
         """)
 
-        # Índices para búsquedas rápidas por paciente y fecha
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_psa_patient ON psa_measurements(patient_id)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_psa_patient_date ON psa_measurements(patient_id, measurement_date)"
-        )
+        # Índices PSA longitudinal
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_psa_patient ON psa_measurements(patient_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_psa_patient_date ON psa_measurements(patient_id, measurement_date)")
+
+        # ── FASE A: 33 columnas nuevas en pacientes (todas NULLABLE) ──────────────
+        NEW_COLS = [
+            # Datos demográficos extendidos
+            ("sex",                         "TEXT"),
+            ("marital_status",              "TEXT"),
+            ("occupation",                  "TEXT"),
+            ("blood_type",                  "TEXT"),
+            ("alternative_phone",           "TEXT"),
+            ("address",                     "TEXT"),
+            ("insurance_company",           "TEXT"),
+            ("insurance_policy",            "TEXT"),
+            ("emergency_contact_name",      "TEXT"),
+            ("emergency_contact_phone",     "TEXT"),
+            ("emergency_contact_relationship", "TEXT"),
+            # Hábitos
+            ("smoking_status",              "TEXT"),
+            ("smoking_pack_years",          "REAL"),
+            ("alcohol_consumption",         "TEXT"),
+            ("previous_surgeries",          "TEXT"),
+            ("allergies",                   "TEXT"),
+            ("no_drug_allergies",           "INTEGER DEFAULT 0"),
+            # Clínica
+            ("chief_complaint",             "TEXT"),
+            ("treatment_plan",              "TEXT"),
+            ("next_appointment_date",       "TEXT"),
+            # Signos vitales
+            ("bp_systolic",                 "INTEGER"),
+            ("bp_diastolic",                "INTEGER"),
+            ("heart_rate",                  "INTEGER"),
+            ("weight_kg",                   "REAL"),
+            ("height_cm",                   "REAL"),
+            # Tacto Rectal (DRE)
+            ("dre_performed",               "INTEGER DEFAULT 0"),
+            ("dre_prostate_size",           "TEXT"),
+            ("dre_consistency",             "TEXT"),
+            ("dre_nodules",                 "INTEGER"),
+            ("dre_nodule_location",         "TEXT"),
+            ("dre_painful",                 "INTEGER"),
+            ("dre_notes",                   "TEXT"),
+            # Hormonales
+            ("testosterone_total",          "REAL"),
+        ]
+        for col_name, col_def in NEW_COLS:
+            _add_col(conn, "pacientes", col_name, col_def)
+
+        # ── FASE A: 5 tablas de relaciones ────────────────────────────────────────
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS patient_comorbidities (
+                id         TEXT PRIMARY KEY,
+                patient_id TEXT NOT NULL,
+                code       TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS patient_medications (
+                id         TEXT PRIMARY KEY,
+                patient_id TEXT NOT NULL,
+                name       TEXT NOT NULL,
+                dose       TEXT,
+                frequency  TEXT,
+                active     INTEGER DEFAULT 1,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS patient_family_history (
+                id               TEXT PRIMARY KEY,
+                patient_id       TEXT NOT NULL,
+                relationship     TEXT NOT NULL,
+                pathology        TEXT NOT NULL,
+                pathology_notes  TEXT,
+                diagnosis_age    INTEGER,
+                status           TEXT,
+                created_at       TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS patient_diagnoses (
+                id         TEXT PRIMARY KEY,
+                patient_id TEXT NOT NULL,
+                code       TEXT NOT NULL,
+                is_primary INTEGER DEFAULT 0,
+                notes      TEXT,
+                icd10_code TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS patient_luts_symptoms (
+                id             TEXT PRIMARY KEY,
+                patient_id     TEXT NOT NULL,
+                symptom        TEXT NOT NULL,
+                severity       TEXT,
+                nocturia_times INTEGER,
+                active         INTEGER DEFAULT 1,
+                created_at     TEXT NOT NULL
+            )
+        """)
+
+        # Índices en tablas de relaciones
+        for tbl in ("patient_comorbidities", "patient_medications",
+                    "patient_family_history", "patient_diagnoses", "patient_luts_symptoms"):
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{tbl}_pid ON {tbl}(patient_id)")
+
+        # Índices en pacientes para filtros nuevos
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_sex ON pacientes(sex)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_dre ON pacientes(dre_performed)")
 
 
 init_db()
 
-# ── Incluir router PSA longitudinal ───────────────────────────────────────────
+# ── Incluir routers ───────────────────────────────────────────────────────────
 from psa_router import router as psa_router
 app.include_router(psa_router)
+
+from patient_extended_router import router as patient_ext_router
+app.include_router(patient_ext_router)
 
 # ── In-memory BCV cache ────────────────────────────────────────────────────────
 
