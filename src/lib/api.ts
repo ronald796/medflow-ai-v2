@@ -247,3 +247,28 @@ export async function getPatientExpanded(id: string): Promise<Record<string, unk
   if (!res.ok) throw new Error("Error obteniendo paciente");
   return res.json();
 }
+
+export async function deletePatient(
+  id: string,
+  options?: { permanent?: boolean }
+): Promise<{ status: string; id: string; message: string }> {
+  const url = options?.permanent
+    ? `${BASE_URL}/api/v1/pacientes/${id}?permanent=true`
+    : `${BASE_URL}/api/v1/pacientes/${id}`;
+  const res = await fetch(url, { method: "DELETE" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Error al eliminar paciente");
+  }
+  return res.json();
+}
+
+export async function markPatientAsTest(
+  id: string
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`${BASE_URL}/api/v1/pacientes/${id}/mark-as-test`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("Error al marcar como paciente de prueba");
+  return res.json();
+}

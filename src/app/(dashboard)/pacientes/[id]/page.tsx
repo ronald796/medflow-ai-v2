@@ -13,6 +13,7 @@ import { Patient, PatientStatus } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
 import PsaChart from "@/components/pacientes/PsaChart";
 import PsaRatioCard from "@/components/pacientes/PsaRatioCard";
+import DeletePatientButton from "@/components/pacientes/DeletePatientButton";
 import DicomUpload from "@/components/pacientes/DicomUpload";
 import MedIAPanel from "@/components/pacientes/MedIAPanel";
 import PSAHistoryChart from "@/components/pacientes/PSAHistoryChart";
@@ -509,6 +510,13 @@ export default function FichaPaciente() {
           )}
         </div>
       )}
+
+      {/* Zona de Peligro — al final, fuera de las tabs */}
+      <DeletePatientButton
+        patientId={id}
+        patientName={patient.name}
+        isTestPatient={!!(patient as unknown as { is_test_patient?: boolean }).is_test_patient}
+      />
 
       {/* Dialog nueva medición */}
       {showDialog && (

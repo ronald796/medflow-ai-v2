@@ -191,14 +191,17 @@ async def get_patient_expanded(patient_id: str):
     Retorna el paciente con todas sus relaciones y campos calculados.
     Complementa el GET /api/v1/pacientes/{id} legacy.
     """
-    from main import get_db
+    from main import get_db, _enrich_patient
 
     with get_db() as conn:
-        _check_patient(patient_id, conn)
-        row = conn.execute("SELECT * FROM pacientes WHERE id = ?", (patient_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM pacientes WHERE id = ? AND deleted_at IS NULL", (patient_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Paciente no encontrado o eliminado")
         relations = _load_relations(patient_id, conn)
 
-    return _build_response(dict(row), relations)
+    return _enrich_patient(_build_response(dict(row), relations))
 
 
 # ── Endpoint: PUT paciente (update parcial) ───────────────────────────────────

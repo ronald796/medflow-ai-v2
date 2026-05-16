@@ -221,6 +221,11 @@ def init_db() -> None:
         for col_name, col_def in NEW_COLS:
             _add_col(conn, "pacientes", col_name, col_def)
 
+        # ── Soft delete + test flag ────────────────────────────────────────────────
+        _add_col(conn, "pacientes", "deleted_at",      "TEXT")
+        _add_col(conn, "pacientes", "is_test_patient",  "INTEGER DEFAULT 0")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_deleted ON pacientes(deleted_at)")
+
         # ── FASE A: 5 tablas de relaciones ────────────────────────────────────────
         conn.execute("""
             CREATE TABLE IF NOT EXISTS patient_comorbidities (
@@ -604,18 +609,19 @@ async def get_dashboard_stats():
 
     with get_db() as conn:
             pacientes_hoy = _scalar(conn.execute(
-                "SELECT COUNT(*) FROM pacientes WHERE fecha_registro LIKE ?",
+                "SELECT COUNT(*) FROM pacientes WHERE fecha_registro LIKE ? AND deleted_at IS NULL",
                 (f"{hoy}%",),
             ).fetchone())
 
             total_pacientes = _scalar(conn.execute(
-                "SELECT COUNT(*) FROM pacientes"
+                "SELECT COUNT(*) FROM pacientes WHERE deleted_at IS NULL"
             ).fetchone())
 
             alertas_rows = conn.execute(
                 """SELECT nombre, edad, psa_total, indice_psa
                    FROM pacientes
-                   WHERE (psa_total > 4 OR (indice_psa IS NOT NULL AND indice_psa < 15))
+                   WHERE deleted_at IS NULL
+                     AND (psa_total > 4 OR (indice_psa IS NOT NULL AND indice_psa < 15))
                    ORDER BY psa_total DESC LIMIT 5"""
             ).fetchall()
 
@@ -721,32 +727,94 @@ async def save_patient(p: PacienteIn):
     }
 
 
+def _now() -> str:
+    return datetime.utcnow().isoformat()
+
+
+def _enrich_patient(p: dict) -> dict:
+    """Normaliza is_test_patient (int→bool) y auto-detecta pacientes de prueba por nombre."""
+    db_flag = bool(p.get("is_test_patient", 0))
+    name_flag = any(kw in (p.get("nombre") or "").lower() for kw in ["test", "prueba", "demo", "ejemplo"])
+    p["is_test_patient"] = db_flag or name_flag
+    return p
+
+
 @app.get("/api/v1/pacientes")
 async def list_patients(q: Optional[str] = Query(None, description="Buscar por nombre o cédula")):
     with get_db() as conn:
         if q:
             rows = conn.execute(
                 """SELECT * FROM pacientes
-                   WHERE nombre LIKE ? OR cedula LIKE ?
+                   WHERE deleted_at IS NULL AND (nombre LIKE ? OR cedula LIKE ?)
                    ORDER BY fecha_registro DESC LIMIT 100""",
                 (f"%{q}%", f"%{q}%"),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM pacientes ORDER BY fecha_registro DESC LIMIT 100"
+                "SELECT * FROM pacientes WHERE deleted_at IS NULL ORDER BY fecha_registro DESC LIMIT 100"
             ).fetchall()
-    return {"pacientes": [dict(r) for r in rows], "count": len(rows)}
+    return {"pacientes": [_enrich_patient(dict(r)) for r in rows], "count": len(rows)}
 
 
 @app.get("/api/v1/pacientes/{pid}")
 async def get_patient(pid: str):
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM pacientes WHERE id = ?", (pid,)
+            "SELECT * FROM pacientes WHERE id = ? AND deleted_at IS NULL", (pid,)
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
-    return dict(row)
+    return _enrich_patient(dict(row))
+
+
+@app.delete("/api/v1/pacientes/{pid}")
+async def delete_patient(pid: str, permanent: bool = False):
+    # TODO: Registrar en audit_log: user_id, action='DELETE',
+    # resource_type='patient', resource_id={pid}, timestamp, soft/hard
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, nombre, is_test_patient, deleted_at FROM pacientes WHERE id = ?", (pid,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Paciente no encontrado")
+        r = dict(row)
+        if r["deleted_at"]:
+            raise HTTPException(status_code=404, detail="Paciente ya fue eliminado")
+
+        if permanent:
+            is_test = bool(r.get("is_test_patient", 0)) or \
+                      any(kw in (r.get("nombre") or "").lower() for kw in ["test", "prueba", "demo", "ejemplo"])
+            if not is_test:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Eliminación permanente solo permitida para pacientes marcados como 'test'"
+                )
+            # Hard delete: eliminar relaciones y paciente
+            for tbl in ["psa_measurements", "patient_comorbidities", "patient_medications",
+                        "patient_family_history", "patient_diagnoses", "patient_luts_symptoms"]:
+                conn.execute(f"DELETE FROM {tbl} WHERE patient_id = ?", (pid,))
+            conn.execute("DELETE FROM pacientes WHERE id = ?", (pid,))
+            return {"status": "deleted_permanently", "id": pid, "message": "Paciente eliminado permanentemente"}
+
+        # Soft delete
+        conn.execute(
+            "UPDATE pacientes SET deleted_at = ? WHERE id = ?",
+            (_now(), pid),
+        )
+    return {"status": "deleted", "id": pid, "message": "Paciente eliminado correctamente"}
+
+
+@app.post("/api/v1/pacientes/{pid}/mark-as-test")
+async def mark_as_test(pid: str):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM pacientes WHERE id = ? AND deleted_at IS NULL", (pid,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Paciente no encontrado")
+        conn.execute("UPDATE pacientes SET is_test_patient = 1 WHERE id = ?", (pid,))
+        updated = conn.execute("SELECT * FROM pacientes WHERE id = ?", (pid,)).fetchone()
+    return _enrich_patient(dict(updated))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
