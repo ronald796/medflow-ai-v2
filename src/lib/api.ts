@@ -220,3 +220,30 @@ export async function deletePsaMeasurement(
   );
   if (!res.ok) throw new Error("Error eliminando medición PSA");
 }
+
+// ── Paciente Expandido (Fase A/B) ─────────────────────────────────────────────
+
+import type { PatientExpandedPayload } from "@/types/patient-form";
+
+export async function createPatientExpanded(data: PatientExpandedPayload): Promise<Record<string, unknown>> {
+  const res = await fetch(`${BASE_URL}/api/v1/pacientes/expanded`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(
+      Array.isArray(err.detail)
+        ? err.detail.map((e: { msg: string }) => e.msg).join(". ")
+        : err.detail ?? "Error creando paciente"
+    );
+  }
+  return res.json();
+}
+
+export async function getPatientExpanded(id: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`${BASE_URL}/api/v1/pacientes/${id}/expanded`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Error obteniendo paciente");
+  return res.json();
+}
